@@ -170,6 +170,7 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
       <img id="clientPhoto" alt="Client portrait">
     </div>
     <a id="downloadBtn" class="download" href="#" download="Nero-Studio-Portrait.jpg">DOWNLOAD HIGH-QUALITY PHOTO</a>
+    <div id="clientGallery" style="display:none;margin-top:14px"></div>
     <p style="font-size:12px;color:#888;margin-top:18px">Thank you for visiting Nero Studio.</p>
   </div>
 </div>
@@ -214,6 +215,8 @@ function getClient(){
     email:document.getElementById("email").value.trim(),
     photo:photoData,
     dropboxLink:window.currentDropboxLink||'',
+    dropboxLinks:window.currentDropboxLinks||[],
+    dropboxPhotos:window.currentDropboxPhotos||[],
     sent:false
   };
 }
@@ -330,22 +333,25 @@ function chooseFromDropbox(){
     success:function(files){
       if(!files || !files.length)return;
       const selectedFiles=files;
-       const f=files[0];
+      const f=files[0];
       // The preview link is intended for sharing. Direct links expire after 4 hours.
-      // We store the selected Dropbox link for the prototype and use the thumbnail for preview.
+      // We store all selected Dropbox links/photos for the prototype and use the first thumbnail for admin preview.
       photoData=(f.thumbnailLink || f.link || "");
-       window.currentDropboxLinks=selectedFiles.map(x=>x.link||"").filter(Boolean);
-       window.currentDropboxPhotos=selectedFiles.map(x=>({name:x.name||"Dropbox photo",thumbnail:x.thumbnailLink||x.link||"",link:x.link||""}));
+      window.currentDropboxLinks=selectedFiles.map(x=>x.link||"").filter(Boolean);
+      window.currentDropboxPhotos=selectedFiles.map(x=>({name:x.name||"Dropbox photo",thumbnail:x.thumbnailLink||x.link||"",link:x.link||""}));
+      window.currentDropboxLink=f.link||"";
       const img=document.getElementById("photoPreview");
       if(f.thumbnailLink){
         img.src=f.thumbnailLink;
         img.style.display="block";
         document.getElementById("placeholder").style.display="none";
       }
-      document.getElementById("dropboxFile").style.display="block";
-      document.getElementById("dropboxFile").innerHTML="<b>Selected:</b> "+escapeHtml(f.name||"Dropbox photo")+"<br><span style='color:#777'>Dropbox link saved for this client.</span>";
-      window.currentDropboxLink=f.link||"";
-      showDropboxStatus("Dropbox photo selected successfully.");
+      const listEl=document.getElementById("dropboxFiles");
+      listEl.style.display="block";
+      listEl.innerHTML="<b>Selected "+selectedFiles.length+" photo"+(selectedFiles.length===1?"":"s")+":</b><br>"
+        + selectedFiles.map(x=>escapeHtml(x.name||"Dropbox photo")).join("<br>")
+        + "<br><span style='color:#777'>All selected photos will be delivered to this client.</span>";
+      showDropboxStatus(selectedFiles.length+" Dropbox photo"+(selectedFiles.length===1?"":"s")+" selected successfully.");
       saveCurrent();
     },
     cancel:function(){
@@ -385,9 +391,10 @@ function decodeClientData(token){
   }catch(e){return null;}
 }
 function makeClientLink(c){
+  const links=(c.dropboxLinks && c.dropboxLinks.length) ? c.dropboxLinks : (c.dropboxLink ? [c.dropboxLink] : []);
   const payload={
     n:((c.first||'')+' '+(c.last||'')).trim(),
-    d:(c.dropboxLink||'').replace('?dl=0','?dl=1'),
+    d:links.map(l=>(l||'').replace('?dl=0','?dl=1')),
     p:c.photo||''
   };
   return location.origin+location.pathname+'?client='+encodeClientData(payload);
@@ -424,12 +431,22 @@ function showDeliveryPageFromURL(){
   document.getElementById('clientNameDisplay').textContent=c.n||'Your Portrait';
   const img=document.getElementById('clientPhoto');
   const dl=document.getElementById('downloadBtn');
-  if(c.p){
+  const gallery=document.getElementById('clientGallery');
+  const links=Array.isArray(c.d)?c.d.filter(Boolean):(c.d?[c.d]:[]);
+  if(links.length>1){
+    // Multiple Dropbox photos: show a download link for each one.
+    img.style.display='none';
+    dl.style.display='none';
+    gallery.style.display='block';
+    gallery.innerHTML=links.map((l,i)=>
+      '<a class="download" style="display:block;margin-bottom:10px" href="'+l+'" target="_blank" rel="noopener">DOWNLOAD PHOTO '+(i+1)+' OF '+links.length+'</a>'
+    ).join('');
+  } else if(c.p){
     img.src=c.p; img.style.display='block';
     dl.href=c.p; dl.download='Nero-Studio-Portrait.jpg';
-  } else if(c.d){
+  } else if(links.length===1){
     img.style.display='none';
-    dl.href=c.d;
+    dl.href=links[0];
     dl.removeAttribute('download');
     dl.textContent='OPEN / DOWNLOAD PORTRAIT';
   }
