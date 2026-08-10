@@ -171,14 +171,21 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
     <div class="client-logo">NERO<span>STUDIO</span></div>
     <p style="color:#777">YOUR PORTRAIT IS READY</p>
     <h1 id="clientNameDisplay">Your Portrait</h1>
-    <div class="client-photo">
-      <img id="clientPhoto" alt="Client portrait">
-    </div>
-    <a id="downloadBtn" class="download" href="#" download="Nero-Studio-Portrait.jpg">DOWNLOAD HIGH-QUALITY PHOTO</a>
-    <div id="clientGallery" style="display:none;margin-top:14px"></div>
+    <div id="clientGallery" class="client-gallery"></div>
     <p style="font-size:12px;color:#888;margin-top:18px">Thank you for visiting Nero Studio.</p>
   </div>
 </div>
+
+<style>
+.client-gallery{display:grid;grid-template-columns:1fr;gap:24px;margin:20px 0}
+.client-gallery.multi{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.client-photo-tile{background:#fff;border-radius:16px;padding:8px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.client-photo-tile img{width:100%;max-height:70vh;object-fit:contain;border-radius:10px;display:block;background:#f4f3f0}
+.client-gallery.multi .client-photo-tile img{max-height:280px;object-fit:cover}
+.download-arrow{display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:#111;margin:14px auto 0;text-decoration:none;transition:transform .15s ease}
+.download-arrow:active{transform:scale(0.92)}
+.download-arrow svg{width:20px;height:20px;stroke:#fff}
+</style>
 
 <script>
 let photoData = "";
@@ -316,13 +323,24 @@ function newClient(){
 function showClient(){
   const c=getClient();
   document.getElementById("clientNameDisplay").textContent=(c.first+" "+c.last).trim()||"Your Portrait";
-  const img=document.getElementById("clientPhoto");
-  const dl=document.getElementById("downloadBtn");
-  if(c.photo){img.src=c.photo;dl.href=c.dropboxLink||c.photo}
-  else if(c.dropboxLink){img.style.display="none";dl.href=c.dropboxLink}
-  else{
-    img.src=""; dl.href="#";
-    img.alt="No portrait selected";
+  const gallery=document.getElementById("clientGallery");
+  const photos=(c.dropboxPhotos && c.dropboxPhotos.length) ? c.dropboxPhotos
+    : (c.dropboxLink ? [{thumbnail:'',link:c.dropboxLink}] : []);
+  let items=photos.map(ph=>({t:ph.thumbnail||'',d:(ph.link||'').replace('?dl=0','?dl=1')}));
+  if(!items.length && c.photo){items=[{d:c.photo,t:c.photo}]}
+  gallery.classList.toggle('multi',items.length>1);
+  if(!items.length){
+    gallery.innerHTML='<p style="color:#999">No portrait selected</p>';
+  } else {
+    gallery.innerHTML=items.map((it,i)=>{
+      const previewSrc=it.t||it.d||'';
+      const filename='Nero-Studio-Portrait'+(items.length>1?'-'+(i+1):'')+'.jpg';
+      return '<div class="client-photo-tile">'
+        +'<img src="'+previewSrc+'" alt="Client portrait">'
+        +'<a class="download-arrow" href="'+(it.d||'')+'" download="'+filename+'" target="_blank" rel="noopener" aria-label="Download photo">'
+        +'<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 21h14"/></svg>'
+        +'</a></div>';
+    }).join('');
   }
   document.getElementById("clientView").style.display="block";
 }
@@ -412,14 +430,18 @@ function decodeClientData(token){
   }catch(e){return null;}
 }
 function makeClientLink(c){
-  const links=(c.dropboxLinks && c.dropboxLinks.length) ? c.dropboxLinks : (c.dropboxLink ? [c.dropboxLink] : []);
+  const photos=(c.dropboxPhotos && c.dropboxPhotos.length) ? c.dropboxPhotos
+    : (c.dropboxLink ? [{thumbnail:'',link:c.dropboxLink}] : []);
   // Prefer the full-resolution Dropbox file(s) over the admin-side thumbnail preview.
-  // c.photo is only the delivered photo when no Dropbox source was selected at all
-  // (i.e. the studio uploaded a photo directly from the device).
+  // A direct base64 upload (no Dropbox source) is the only case that falls back to c.photo.
+  const items=photos.map(ph=>({
+    t:ph.thumbnail||'',
+    d:(ph.link||'').replace('?dl=0','?dl=1')
+  }));
   const payload={
     n:((c.first||'')+' '+(c.last||'')).trim(),
-    d:links.map(l=>(l||'').replace('?dl=0','?dl=1')),
-    p:links.length?'':(c.photo||'')
+    items:items,
+    p:items.length?'':(c.photo||'')
   };
   return location.origin+location.pathname+'?client='+encodeClientData(payload);
 }
@@ -453,27 +475,28 @@ function showDeliveryPageFromURL(){
   view.style.display='block';
   document.querySelector('.client-close').style.display='none';
   document.getElementById('clientNameDisplay').textContent=c.n||'Your Portrait';
-  const img=document.getElementById('clientPhoto');
-  const dl=document.getElementById('downloadBtn');
   const gallery=document.getElementById('clientGallery');
-  const links=Array.isArray(c.d)?c.d.filter(Boolean):(c.d?[c.d]:[]);
-  if(links.length>1){
-    // Multiple Dropbox photos: show a download link for each one.
-    img.style.display='none';
-    dl.style.display='none';
-    gallery.style.display='block';
-    gallery.innerHTML=links.map((l,i)=>
-      '<a class="download" style="display:block;margin-bottom:10px" href="'+l+'" target="_blank" rel="noopener">DOWNLOAD PHOTO '+(i+1)+' OF '+links.length+'</a>'
-    ).join('');
-  } else if(links.length===1){
-    img.style.display='none';
-    dl.href=links[0];
-    dl.removeAttribute('download');
-    dl.textContent='OPEN / DOWNLOAD PORTRAIT';
-  } else if(c.p){
-    img.src=c.p; img.style.display='block';
-    dl.href=c.p; dl.download='Nero-Studio-Portrait.jpg';
+
+  // Normalize legacy link formats (older links used c.d / c.p) into items[].
+  let items=Array.isArray(c.items)?c.items.filter(it=>it&&(it.d||it.t)):[];
+  if(!items.length){
+    const legacyLinks=Array.isArray(c.d)?c.d.filter(Boolean):(c.d?[c.d]:[]);
+    items=legacyLinks.map(l=>({d:l,t:''}));
   }
+  if(!items.length && c.p){
+    items=[{d:c.p,t:c.p}];
+  }
+
+  gallery.classList.toggle('multi',items.length>1);
+  gallery.innerHTML=items.map((it,i)=>{
+    const previewSrc=it.t||it.d||'';
+    const filename='Nero-Studio-Portrait'+(items.length>1?'-'+(i+1):'')+'.jpg';
+    return '<div class="client-photo-tile">'
+      +'<img src="'+previewSrc+'" alt="Client portrait">'
+      +'<a class="download-arrow" href="'+(it.d||'')+'" download="'+filename+'" target="_blank" rel="noopener" aria-label="Download photo">'
+      +'<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 21h14"/></svg>'
+      +'</a></div>';
+  }).join('');
   return true;
 }
 window.addEventListener('DOMContentLoaded',showDeliveryPageFromURL);
