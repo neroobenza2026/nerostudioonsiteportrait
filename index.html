@@ -31,6 +31,10 @@ input:focus{border-color:#777}
 .photo-box img{width:100%;height:100%;max-height:430px;object-fit:contain;display:none}
 .photo-placeholder{text-align:center;color:#999;padding:30px}
 .photo-placeholder strong{display:block;color:#555;margin-bottom:8px}
+.dropbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:10px}
+.dropbox-grid .thumb{position:relative;border-radius:8px;overflow:hidden;background:#eee;aspect-ratio:1}
+.dropbox-grid .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.dropbox-grid .thumb span{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .file-btn{display:inline-block;margin-top:15px;background:#111;color:white;padding:11px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer}
 #photoInput{display:none}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
@@ -111,6 +115,7 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
           <label class="file-btn" for="photoInput">Choose Photo</label>
         </div>
         <img id="photoPreview" alt="Portrait preview">
+        <div id="multiPhotoBadge" style="display:none;position:absolute;top:10px;right:10px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:4px 9px;border-radius:20px"></div>
       </div>
       <input id="photoInput" type="file" accept="image/*" onchange="loadPhoto(event)">
     </section>
@@ -185,6 +190,11 @@ function loadPhoto(e){
   const reader=new FileReader();
   reader.onload=function(ev){
     photoData=ev.target.result;
+    window.currentDropboxLink="";
+    window.currentDropboxLinks=[];
+    window.currentDropboxPhotos=[];
+    document.getElementById("dropboxFiles").style.display="none";
+    document.getElementById("multiPhotoBadge").style.display="none";
     const img=document.getElementById("photoPreview");
     img.src=photoData; img.style.display="block";
     document.getElementById("placeholder").style.display="none";
@@ -299,6 +309,8 @@ function newClient(){
   document.getElementById("placeholder").style.display="block";
   document.getElementById("photoInput").value="";
   document.getElementById("status").style.display="none";
+  document.getElementById("dropboxFiles").style.display="none";
+  document.getElementById("multiPhotoBadge").style.display="none";
 }
 
 function showClient(){
@@ -346,11 +358,20 @@ function chooseFromDropbox(){
         img.style.display="block";
         document.getElementById("placeholder").style.display="none";
       }
+      const badge=document.getElementById("multiPhotoBadge");
+      if(selectedFiles.length>1){
+        badge.style.display="block";
+        badge.textContent=selectedFiles.length+" photos selected";
+      } else {
+        badge.style.display="none";
+      }
       const listEl=document.getElementById("dropboxFiles");
       listEl.style.display="block";
-      listEl.innerHTML="<b>Selected "+selectedFiles.length+" photo"+(selectedFiles.length===1?"":"s")+":</b><br>"
-        + selectedFiles.map(x=>escapeHtml(x.name||"Dropbox photo")).join("<br>")
-        + "<br><span style='color:#777'>All selected photos will be delivered to this client.</span>";
+      const label="<b>Selected "+selectedFiles.length+" photo"+(selectedFiles.length===1?"":"s")+":</b>";
+      const grid="<div class='dropbox-grid'>"+selectedFiles.map(x=>
+        "<div class='thumb'><img src='"+(x.thumbnailLink||'')+"' alt=''><span>"+escapeHtml(x.name||"Dropbox photo")+"</span></div>"
+      ).join("")+"</div>";
+      listEl.innerHTML=label+grid+"<div style='color:#777;margin-top:8px'>All selected photos will be delivered to this client.</div>";
       showDropboxStatus(selectedFiles.length+" Dropbox photo"+(selectedFiles.length===1?"":"s")+" selected successfully.");
       saveCurrent();
     },
@@ -392,10 +413,13 @@ function decodeClientData(token){
 }
 function makeClientLink(c){
   const links=(c.dropboxLinks && c.dropboxLinks.length) ? c.dropboxLinks : (c.dropboxLink ? [c.dropboxLink] : []);
+  // Prefer the full-resolution Dropbox file(s) over the admin-side thumbnail preview.
+  // c.photo is only the delivered photo when no Dropbox source was selected at all
+  // (i.e. the studio uploaded a photo directly from the device).
   const payload={
     n:((c.first||'')+' '+(c.last||'')).trim(),
     d:links.map(l=>(l||'').replace('?dl=0','?dl=1')),
-    p:c.photo||''
+    p:links.length?'':(c.photo||'')
   };
   return location.origin+location.pathname+'?client='+encodeClientData(payload);
 }
@@ -441,14 +465,14 @@ function showDeliveryPageFromURL(){
     gallery.innerHTML=links.map((l,i)=>
       '<a class="download" style="display:block;margin-bottom:10px" href="'+l+'" target="_blank" rel="noopener">DOWNLOAD PHOTO '+(i+1)+' OF '+links.length+'</a>'
     ).join('');
-  } else if(c.p){
-    img.src=c.p; img.style.display='block';
-    dl.href=c.p; dl.download='Nero-Studio-Portrait.jpg';
   } else if(links.length===1){
     img.style.display='none';
     dl.href=links[0];
     dl.removeAttribute('download');
     dl.textContent='OPEN / DOWNLOAD PORTRAIT';
+  } else if(c.p){
+    img.src=c.p; img.style.display='block';
+    dl.href=c.p; dl.download='Nero-Studio-Portrait.jpg';
   }
   return true;
 }
