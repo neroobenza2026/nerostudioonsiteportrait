@@ -117,10 +117,10 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
 
     <section class="card">
       <h2>2A. Dropbox</h2>
-      <p style="font-size:13px;color:#777">Choose an edited portrait directly from your Dropbox.</p>
-      <button class="btn primary full" onclick="chooseFromDropbox()">☁️ Choose from Dropbox</button>
+      <p style="font-size:13px;color:#777">Choose multiple edited portraits directly from your Dropbox.</p>
+      <button class="btn primary full" onclick="chooseFromDropbox()">☁️ Choose Photos from Dropbox</button>
       <div class="status" id="dropboxStatus"></div>
-      <div id="dropboxFile" style="display:none;margin-top:12px;background:#f7f5f2;padding:12px;border-radius:10px;font-size:12px"></div>
+      <div id="dropboxFiles" style="display:none;margin-top:12px;background:#f7f5f2;padding:12px;border-radius:10px;font-size:12px"></div>
     </section>
 
     <section class="card">
@@ -129,7 +129,7 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
         <button class="btn primary" onclick="sendSMS()">📱 Send SMS</button>
         <button class="btn secondary" onclick="sendEmail()">✉️ Send Email</button>
       </div>
-      <button class="btn green full" onclick="showClient()">🔗 Preview Private Download Page</button>
+      <button class="btn green full" onclick="openGeneratedClientPage()">🔗 Create Client Download Page</button>
       <div class="status" id="status"></div>
       <p style="font-size:12px;color:#888;margin-top:18px">
         Prototype mode: SMS/email open your device's apps. Dropbox selection uses the official Dropbox Chooser.
@@ -141,10 +141,10 @@ repeating-linear-gradient(0deg,#111 0 5px,transparent 5px 10px);opacity:.8}
       <h2>4. Client Link</h2>
       <p style="font-size:13px;color:#777">Private gallery link for this client.</p>
       <div style="background:#f7f5f2;padding:13px;border-radius:10px;font-size:12px;word-break:break-all" id="linkBox">
-        https://nerostudio.example/p/8K4J2
+        Your real client link will appear here after selecting a portrait.
       </div>
       <div class="qr"><div class="qr-grid"></div></div>
-      <button class="btn secondary full" onclick="copyLink()">Copy Client Link</button>
+      <button class="btn secondary full" onclick="copyGeneratedClientLink()">Copy Real Client Link</button>
     </section>
   </div>
 
@@ -220,29 +220,35 @@ function getClient(){
 
 function sendSMS(){
   const c=getClient();
-  if(!c.first || !c.mobile){showStatus("Please enter the client's name and mobile number.");return}
-  const link="https://nerostudio.example/p/"+makeCode();
+  if(!c.first || !c.mobile){showStatus('Please enter the client\'s name and mobile number.');return}
+  if(!c.dropboxLink && !c.photo){showStatus('Please select the client portrait first.');return}
+  const link=makeClientLink(c);
+  document.getElementById('linkBox').textContent=link;
   const text=`Hi ${c.first}! Your Nero Studio portrait is ready 📸 View and download your photo here: ${link}`;
-  window.location.href="sms:"+encodeURIComponent(c.mobile)+"?body="+encodeURIComponent(text);
+  window.location.href='sms:'+encodeURIComponent(c.mobile)+'?body='+encodeURIComponent(text);
   addClient(c);
-  showStatus("SMS message prepared. In the production version, this can be sent automatically.");
+  showStatus('SMS prepared with the real client download link.');
 }
 
 function sendEmail(){
   const c=getClient();
-  if(!c.first || !c.email){showStatus("Please enter the client's name and email address.");return}
-  const link="https://nerostudio.example/p/"+makeCode();
-  const subject="Your Nero Studio Portrait is Ready";
+  if(!c.first || !c.email){showStatus('Please enter the client\'s name and email address.');return}
+  if(!c.dropboxLink && !c.photo){showStatus('Please select the client portrait first.');return}
+  const link=makeClientLink(c);
+  document.getElementById('linkBox').textContent=link;
+  const subject='Your Nero Studio Portrait is Ready';
   const body=`Hi ${c.first},\n\nYour Nero Studio portrait is ready.\n\nView and download your photo here:\n${link}\n\nThank you for visiting Nero Studio.`;
-  window.location.href="mailto:"+encodeURIComponent(c.email)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);
+  window.location.href='mailto:'+encodeURIComponent(c.email)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
   addClient(c);
-  showStatus("Email message prepared. In the production version, this can be sent automatically.");
+  showStatus('Email prepared with the real client download link.');
 }
 
 function addClient(c){
   const existing=clients.find(x=>x.mobile===c.mobile && c.mobile);
   if(existing){existing.sent=true;if(c.photo)existing.photo=c.photo;
-    if(c.dropboxLink)existing.dropboxLink=c.dropboxLink}
+    if(c.dropboxLink)existing.dropboxLink=c.dropboxLink;
+    if(c.dropboxLinks)existing.dropboxLinks=c.dropboxLinks;
+    if(c.dropboxPhotos)existing.dropboxPhotos=c.dropboxPhotos}
   else{c.sent=true;clients.unshift(c)}
   localStorage.setItem("neroClients",JSON.stringify(clients));
   updateStats();renderTable();
@@ -269,6 +275,8 @@ function loadClient(i){
   document.getElementById("email").value=c.email||"";
   photoData=c.photo||"";
   window.currentDropboxLink=c.dropboxLink||"";
+  window.currentDropboxLinks=c.dropboxLinks||[];
+  window.currentDropboxPhotos=c.dropboxPhotos||[];
   if(photoData){
     document.getElementById("photoPreview").src=photoData;
     document.getElementById("photoPreview").style.display="block";
@@ -281,6 +289,8 @@ function newClient(){
   ["firstName","lastName","mobile","email"].forEach(id=>document.getElementById(id).value="");
   photoData="";
   window.currentDropboxLink="";
+  window.currentDropboxLinks=[];
+  window.currentDropboxPhotos=[];
   document.getElementById("photoPreview").src="";
   document.getElementById("photoPreview").style.display="none";
   document.getElementById("placeholder").style.display="block";
@@ -303,11 +313,8 @@ function showClient(){
 }
 function closeClient(){document.getElementById("clientView").style.display="none"}
 
-function copyLink(){
-  const link=document.getElementById("linkBox").textContent;
-  navigator.clipboard?.writeText(link);
-  showStatus("Client link copied.");
-}
+function copyLink(){copyGeneratedClientLink()}
+
 function makeCode(){return Math.random().toString(36).substring(2,7).toUpperCase()}
 function showStatus(msg){const s=document.getElementById("status");s.textContent=msg;s.style.display="block"}
 function chooseFromDropbox(){
@@ -322,10 +329,13 @@ function chooseFromDropbox(){
   Dropbox.choose({
     success:function(files){
       if(!files || !files.length)return;
-      const f=files[0];
+      const selectedFiles=files;
+       const f=files[0];
       // The preview link is intended for sharing. Direct links expire after 4 hours.
       // We store the selected Dropbox link for the prototype and use the thumbnail for preview.
       photoData=(f.thumbnailLink || f.link || "");
+       window.currentDropboxLinks=selectedFiles.map(x=>x.link||"").filter(Boolean);
+       window.currentDropboxPhotos=selectedFiles.map(x=>({name:x.name||"Dropbox photo",thumbnail:x.thumbnailLink||x.link||"",link:x.link||""}));
       const img=document.getElementById("photoPreview");
       if(f.thumbnailLink){
         img.src=f.thumbnailLink;
@@ -342,7 +352,7 @@ function chooseFromDropbox(){
       showDropboxStatus("Dropbox selection cancelled.");
     },
     linkType:"preview",
-    multiselect:false,
+    multiselect:true,
     extensions:[".jpg",".jpeg",".png",".webp"],
     sizeLimit:100000000
   });
@@ -360,6 +370,72 @@ function updateStats(){
 function escapeHtml(s=""){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 ["firstName","lastName","mobile","email"].forEach(id=>document.getElementById(id).addEventListener("input",saveCurrent));
 updateStats();renderTable();
+</script>
+
+<script>
+function encodeClientData(data){
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function decodeClientData(token){
+  try{
+    token=token.replace(/-/g,'+').replace(/_/g,'/');
+    while(token.length%4) token+='=';
+    return JSON.parse(decodeURIComponent(escape(atob(token))));
+  }catch(e){return null;}
+}
+function makeClientLink(c){
+  const payload={
+    n:((c.first||'')+' '+(c.last||'')).trim(),
+    d:(c.dropboxLink||'').replace('?dl=0','?dl=1'),
+    p:c.photo||''
+  };
+  return location.origin+location.pathname+'?client='+encodeClientData(payload);
+}
+function openGeneratedClientPage(){
+  const c=getClient();
+  if(!c.first && !c.last){showStatus('Enter the client name first.');return;}
+  if(!c.dropboxLink && !c.photo){showStatus('Select a portrait first.');return;}
+  const link=makeClientLink(c);
+  document.getElementById('linkBox').textContent=link;
+  window.open(link,'_blank');
+  showStatus('Private client page created. Copy the link or send it by SMS/email.');
+}
+function copyGeneratedClientLink(){
+  const c=getClient();
+  if(!c.first && !c.last){showStatus('Enter the client name first.');return;}
+  if(!c.dropboxLink && !c.photo){showStatus('Select a portrait first.');return;}
+  const link=makeClientLink(c);
+  document.getElementById('linkBox').textContent=link;
+  if(navigator.clipboard) navigator.clipboard.writeText(link);
+  showStatus('Real client link copied.');
+}
+function getClientFromURL(){
+  const token=new URLSearchParams(location.search).get('client');
+  return token?decodeClientData(token):null;
+}
+function showDeliveryPageFromURL(){
+  const c=getClientFromURL();
+  if(!c)return false;
+  document.querySelector('.app').style.display='none';
+  const view=document.getElementById('clientView');
+  view.style.display='block';
+  document.querySelector('.client-close').style.display='none';
+  document.getElementById('clientNameDisplay').textContent=c.n||'Your Portrait';
+  const img=document.getElementById('clientPhoto');
+  const dl=document.getElementById('downloadBtn');
+  if(c.p){
+    img.src=c.p; img.style.display='block';
+    dl.href=c.p; dl.download='Nero-Studio-Portrait.jpg';
+  } else if(c.d){
+    img.style.display='none';
+    dl.href=c.d;
+    dl.removeAttribute('download');
+    dl.textContent='OPEN / DOWNLOAD PORTRAIT';
+  }
+  return true;
+}
+window.addEventListener('DOMContentLoaded',showDeliveryPageFromURL);
 </script>
 </body>
 </html>
